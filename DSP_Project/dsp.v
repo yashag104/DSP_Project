@@ -1,7 +1,7 @@
-// ============================================================================
+
 // 1D Convolution Accelerator for Financial Time-Series CNN
 // Based on Multi-Timeframe Forex Prediction Model
-// ============================================================================
+
 
 module conv1d_core #(
     parameter DATA_WIDTH = 16,
@@ -283,4 +283,5 @@ module conv1d_tb;
         end
     end
     
+
 endmodule
