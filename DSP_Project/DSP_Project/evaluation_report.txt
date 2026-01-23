@@ -1,0 +1,84 @@
+================================================================================
+MODEL EVALUATION REPORT
+================================================================================
+
+
+1. 1D-CNN
+--------------------------------------------------------------------------------
+Accuracy:  69.34%
+Precision: 59.05%
+Recall:    52.32%
+F1-Score:  55.48%
+
+Confusion Matrix:
+[[326  86]
+ [113 124]]
+True Positives:  124
+True Negatives:  326
+False Positives: 86
+False Negatives: 113
+
+2. MLP
+--------------------------------------------------------------------------------
+Accuracy:  67.80%
+Precision: 56.09%
+Recall:    54.43%
+F1-Score:  55.25%
+
+Confusion Matrix:
+[[311 101]
+ [108 129]]
+True Positives:  129
+True Negatives:  311
+False Positives: 101
+False Negatives: 108
+
+3. Proposed Multi-Timeframe CNN
+--------------------------------------------------------------------------------
+Accuracy:  62.87%
+Precision: 49.10%
+Recall:    45.99%
+F1-Score:  47.49%
+
+Confusion Matrix:
+[[299 113]
+ [128 109]]
+True Positives:  109
+True Negatives:  299
+False Positives: 113
+False Negatives: 128
+
+4. Hybrid CNN-LSTM
+--------------------------------------------------------------------------------
+Accuracy:  62.10%
+Precision: 48.36%
+Recall:    56.12%
+F1-Score:  51.95%
+
+Confusion Matrix:
+[[270 142]
+ [104 133]]
+True Positives:  133
+True Negatives:  270
+False Positives: 142
+False Negatives: 104
+
+5. LSTM
+--------------------------------------------------------------------------------
+Accuracy:  59.01%
+Precision: 45.05%
+Recall:    55.70%
+F1-Score:  49.81%
+
+Confusion Matrix:
+[[251 161]
+ [105 132]]
+True Positives:  132
+True Negatives:  251
+False Positives: 161
+False Negatives: 105
+
+================================================================================
+BEST MODEL: 1D-CNN
+Accuracy: 69.34%
+================================================================================
