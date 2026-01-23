@@ -103,6 +103,7 @@ class ModelEvaluator:
 
     def __init__(self):
         self.results = {}
+        self.training_histories = {}
 
     def evaluate_model(self, model, X_test, y_test, model_name,
                        X_test_2=None, is_dual_input=False):
@@ -135,7 +136,12 @@ class ModelEvaluator:
             'recall': recall * 100,
             'f1_score': f1_score * 100,
             'confusion_matrix': cm,
-            'predictions': y_pred
+            'predictions': y_pred,
+            'prediction_proba': y_pred_proba,
+            'tn': tn,
+            'fp': fp,
+            'fn': fn,
+            'tp': tp
         }
 
         print(f"Accuracy: {accuracy * 100:.2f}%")
@@ -144,6 +150,144 @@ class ModelEvaluator:
         print(f"F1-Score: {f1_score * 100:.2f}%")
 
         return accuracy
+
+    def plot_lstm_actual_price_prediction(self, lstm_model, X_test_scaled, y_test,
+                                          X_test_raw,
+                                          save_path='LSTM_actual_price_prediction.png',
+                                          num_samples=500):
+        """
+        Plot ACTUAL prices vs LSTM predicted direction
+        Shows real forex prices with predicted vs actual trends
+
+        Parameters:
+        -----------
+        lstm_model: trained LSTM model
+        X_test_scaled: scaled test data (for model prediction)
+        y_test: actual labels (0=down, 1=up)
+        X_test_raw: RAW UNSCALED test data with actual prices
+        save_path: path to save the plot
+        num_samples: number of samples to plot
+        """
+        print("\n" + "=" * 80)
+        print("Generating LSTM Actual Price Prediction Plot...")
+        print("=" * 80)
+
+        # Get LSTM predictions
+        y_pred_proba = lstm_model.predict(X_test_scaled)
+        y_pred_class = np.argmax(y_pred_proba, axis=1)
+
+        # Extract actual Close prices from RAW UNSCALED data
+        if X_test_raw.min() < 0:
+            raise ValueError("ERROR: X_test_raw contains scaled data (negative values)! "
+                             "You must pass the ORIGINAL UNSCALED data. "
+                             "Save it during preprocessing before scaling: "
+                             "np.save('X_5min_test_gbpusd_raw.npy', X_test_BEFORE_SCALING)")
+
+        current_prices = X_test_raw[:, -1, 3]  # Last timestep Close price
+
+        # Get next actual prices (ground truth)
+        actual_next_prices = np.zeros(len(current_prices))
+        for i in range(len(current_prices) - 1):
+            actual_next_prices[i] = X_test_raw[i + 1, -1, 3]
+        actual_next_prices[-1] = current_prices[-1]
+
+        # Limit samples
+        plot_length = min(num_samples, len(current_prices))
+
+        # Create figure
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10))
+        x_axis = np.arange(plot_length)
+
+        # ===== Plot 1: Current vs Next Actual Prices =====
+        ax1.plot(x_axis, current_prices[:plot_length], 'b-', linewidth=2,
+                 label='Current Price', alpha=0.8)
+        ax1.plot(x_axis, actual_next_prices[:plot_length], 'g-', linewidth=2,
+                 label='Actual Next Price', alpha=0.8)
+
+        ax1.set_ylabel('Price (Original)', fontsize=13, fontweight='bold')
+        ax1.set_title('Current Price vs Actual Next Price (Real Unscaled Values)',
+                      fontsize=15, fontweight='bold', pad=15)
+        ax1.legend(loc='upper right', fontsize=11)
+        ax1.grid(True, alpha=0.3, linestyle='--')
+
+        # Add price statistics
+        price_min = np.min(current_prices[:plot_length])
+        price_max = np.max(current_prices[:plot_length])
+        price_mean = np.mean(current_prices[:plot_length])
+        ax1.text(0.02, 0.95, f'Min: {price_min:.5f}\nMax: {price_max:.5f}\nMean: {price_mean:.5f}',
+                 transform=ax1.transAxes, fontsize=10, verticalalignment='top',
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        # ===== Plot 2: Prediction Accuracy on Price Movement =====
+        for i in range(plot_length):
+            if y_pred_class[i] == y_test[i]:  # Correct prediction
+                ax2.plot([x_axis[i], x_axis[i]],
+                         [current_prices[i], actual_next_prices[i]],
+                         'g-', linewidth=1.5, alpha=0.6)
+            else:  # Wrong prediction
+                ax2.plot([x_axis[i], x_axis[i]],
+                         [current_prices[i], actual_next_prices[i]],
+                         'r-', linewidth=1.5, alpha=0.6)
+
+        ax2.plot(x_axis, current_prices[:plot_length], 'b-', linewidth=2,
+                 label='Current Price', alpha=0.8)
+        ax2.plot(x_axis, actual_next_prices[:plot_length], 'k--', linewidth=1.5,
+                 label='Actual Next Price', alpha=0.5)
+
+        ax2.set_xlabel('Time Steps', fontsize=13, fontweight='bold')
+        ax2.set_ylabel('Price (Original)', fontsize=13, fontweight='bold')
+        ax2.set_title('LSTM Prediction Accuracy (Green=Correct Direction, Red=Wrong Direction)',
+                      fontsize=15, fontweight='bold', pad=15)
+        ax2.legend(loc='upper right', fontsize=11)
+        ax2.grid(True, alpha=0.3, linestyle='--')
+
+        plt.suptitle('LSTM Price Prediction - Actual Unscaled Prices',
+                     fontsize=17, fontweight='bold', y=0.995)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"\n✓ Plot saved to: {save_path}")
+        plt.close()
+
+        # Calculate accuracy
+        direction_accuracy = np.sum(y_pred_class[:plot_length] == y_test[:plot_length]) / plot_length * 100
+        print(f"Direction Prediction Accuracy: {direction_accuracy:.2f}%")
+
+        return {
+            'current_prices': current_prices[:plot_length],
+            'actual_next_prices': actual_next_prices[:plot_length],
+            'direction_accuracy': direction_accuracy
+        }
+
+    def plot_training_history(self, history, model_name, save_path=None):
+        """Plot training history for a model"""
+        if save_path is None:
+            save_path = f'{model_name}_training_history.png'
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+        # Plot accuracy
+        ax1.plot(history.history['accuracy'], label='Train Accuracy', linewidth=2)
+        ax1.plot(history.history['val_accuracy'], label='Validation Accuracy', linewidth=2)
+        ax1.set_title(f'{model_name} - Accuracy', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Accuracy')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Plot loss
+        ax2.plot(history.history['loss'], label='Train Loss', linewidth=2)
+        ax2.plot(history.history['val_loss'], label='Validation Loss', linewidth=2)
+        ax2.set_title(f'{model_name} - Loss', fontsize=14, fontweight='bold')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Loss')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Training history saved to {save_path}")
+        plt.close()
 
     def plot_confusion_matrices(self, save_path='confusion_matrices.png'):
         """Plot confusion matrices for all models"""
@@ -202,6 +346,36 @@ class ModelEvaluator:
         print(f"Comparison plot saved to {save_path}")
         plt.close()
 
+    def print_comparison_table(self):
+        print("\n" + "=" * 120)
+        print("MODEL COMPARISON TABLE")
+        print("=" * 120)
+
+        # Create DataFrame
+        df_data = []
+        for model_name, results in self.results.items():
+            df_data.append({
+                'Model': model_name,
+                'Accuracy (%)': f"{results['accuracy']:.2f}",
+                'Precision (%)': f"{results['precision']:.2f}",
+                'Recall (%)': f"{results['recall']:.2f}",
+                'F1-Score (%)': f"{results['f1_score']:.2f}",
+                'TP': results['tp'],
+                'TN': results['tn'],
+                'FP': results['fp'],
+                'FN': results['fn']
+            })
+
+        df = pd.DataFrame(df_data)
+        df = df.sort_values('Accuracy (%)', ascending=False)
+
+        print(df.to_string(index=False))
+        print("=" * 120)
+
+        # Save to CSV
+        df.to_csv('model_comparison_metrics.csv', index=False)
+        print("\nComparison metrics saved to 'model_comparison_metrics.csv'")
+
     def generate_report(self, save_path='evaluation_report.txt'):
         """Generate detailed evaluation report"""
         with open(save_path, 'w') as f:
@@ -222,6 +396,10 @@ class ModelEvaluator:
                 f.write(f"Recall:    {results['recall']:.2f}%\n")
                 f.write(f"F1-Score:  {results['f1_score']:.2f}%\n")
                 f.write(f"\nConfusion Matrix:\n{results['confusion_matrix']}\n")
+                f.write(f"True Positives:  {results['tp']}\n")
+                f.write(f"True Negatives:  {results['tn']}\n")
+                f.write(f"False Positives: {results['fp']}\n")
+                f.write(f"False Negatives: {results['fn']}\n")
 
             # Best model
             best_model = sorted_results[0][0]
@@ -245,53 +423,79 @@ if __name__ == "__main__":
     X_1min_test = np.load('X_1min_test_gbpusd.npy')
     y_test = np.load('y_test_gbpusd.npy')
 
+    # Load raw test data (unscaled) for price visualization
+    try:
+        X_5min_test_raw = np.load('X_5min_test_gbpusd_raw.npy')
+        print("✓ Raw test data loaded successfully!")
+    except FileNotFoundError:
+        print("WARNING: Raw test data not found!")
+        X_5min_test_raw = X_5min_test
+
     evaluator = ModelEvaluator()
 
     # 1. Train and evaluate MLP
     print("\n" + "=" * 80)
     print("Training MLP...")
     mlp = BaselineModels.build_mlp(X_5min_train.shape[1:])
-    mlp.fit(X_5min_train, y_train, epochs=30, batch_size=32,
-            validation_split=0.1, verbose=1)
+    history_mlp = mlp.fit(X_5min_train, y_train, epochs=30, batch_size=32,
+                          validation_split=0.1, verbose=1)
+    evaluator.plot_training_history(history_mlp, 'MLP')
     evaluator.evaluate_model(mlp, X_5min_test, y_test, 'MLP')
 
     # 2. Train and evaluate LSTM
     print("\n" + "=" * 80)
     print("Training LSTM...")
     lstm = BaselineModels.build_lstm(X_5min_train.shape[1:])
-    lstm.fit(X_5min_train, y_train, epochs=30, batch_size=32,
-             validation_split=0.1, verbose=1)
+    history_lstm = lstm.fit(X_5min_train, y_train, epochs=30, batch_size=32,
+                            validation_split=0.1, verbose=1)
+    evaluator.plot_training_history(history_lstm, 'LSTM')
     evaluator.evaluate_model(lstm, X_5min_test, y_test, 'LSTM')
+
+    # Generate LSTM actual price prediction plot
+    print("\n" + "=" * 80)
+    print("Generating LSTM Actual Price Prediction Analysis...")
+    print("=" * 80)
+
+    lstm_price_stats = evaluator.plot_lstm_actual_price_prediction(
+        lstm_model=lstm,
+        X_test_scaled=X_5min_test,
+        y_test=y_test,
+        X_test_raw=X_5min_test_raw,
+        save_path='LSTM_actual_price_prediction.png',
+        num_samples=500
+    )
 
     # 3. Train and evaluate 1D-CNN
     print("\n" + "=" * 80)
     print("Training 1D-CNN...")
     cnn_1d = BaselineModels.build_1d_cnn(X_5min_train.shape[1:])
-    cnn_1d.fit(X_5min_train, y_train, epochs=30, batch_size=32,
-               validation_split=0.1, verbose=1)
+    history_cnn = cnn_1d.fit(X_5min_train, y_train, epochs=30, batch_size=32,
+                             validation_split=0.1, verbose=1)
+    evaluator.plot_training_history(history_cnn, '1D-CNN')
     evaluator.evaluate_model(cnn_1d, X_5min_test, y_test, '1D-CNN')
 
     # 4. Train and evaluate Hybrid CNN-LSTM
     print("\n" + "=" * 80)
     print("Training Hybrid CNN-LSTM...")
     hybrid = BaselineModels.build_hybrid_cnn_lstm(X_5min_train.shape[1:])
-    hybrid.fit(X_5min_train, y_train, epochs=30, batch_size=32,
-               validation_split=0.1, verbose=1)
+    history_hybrid = hybrid.fit(X_5min_train, y_train, epochs=30, batch_size=32,
+                                validation_split=0.1, verbose=1)
+    evaluator.plot_training_history(history_hybrid, 'Hybrid_CNN_LSTM')
     evaluator.evaluate_model(hybrid, X_5min_test, y_test, 'Hybrid CNN-LSTM')
 
     # 5. Evaluate proposed model
     print("\n" + "=" * 80)
     print("Evaluating Proposed Multi-Timeframe Model...")
-    proposed_model = keras.models.load_model('model_standard.h5')
-    evaluator.evaluate_model(proposed_model, X_5min_test, y_test,
-                             'Proposed Multi-Timeframe CNN',
-                             X_test_2=X_1min_test, is_dual_input=True)
+    try:
+        proposed_model = keras.models.load_model('model_standard.h5')
+        evaluator.evaluate_model(proposed_model, X_5min_test, y_test,
+                                 'Proposed Multi-Timeframe CNN',
+                                 X_test_2=X_1min_test, is_dual_input=True)
+    except:
+        print("WARNING: Proposed model not found. Skipping this evaluation.")
 
     # Generate visualizations and reports
     evaluator.plot_confusion_matrices()
     evaluator.plot_comparison()
+    evaluator.print_comparison_table()
     evaluator.generate_report()
-
-    print("\n" + "=" * 80)
-    print("Evaluation complete!")
-    print("=" * 80)
